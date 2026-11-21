@@ -1,5 +1,5 @@
 import { extractPages } from "./pdf.mjs";
-import { chunkPages } from "./text.mjs";
+import { chunkPages, expandQuery, tokenize, displayName, synonymsOf } from "./text.mjs";
 import { Bm25Index, vectorSearch, fuse } from "./search.mjs";
 import { embed, generate } from "./gemini.mjs";
 import { readFile } from "node:fs/promises";
@@ -51,6 +51,14 @@ export class Rag {
         }
         await this.store.saveChunks(doc.id, chunks);
         Object.assign(doc, { status: "ready", chunks: chunks.length, error: undefined });
+        if (doc.replaces) {
+          const old = this.store.get(doc.replaces);
+          if (old) {
+            doc.replacedName = old.name;
+            await this.store.remove(old.id);
+          }
+          doc.replaces = undefined;
+        }
         this.invalidate();
         await this.store.saveDocuments();
         await this.#embedDoc(doc);
@@ -121,22 +129,53 @@ export class Rag {
     }
   }
 
-  async retrieve(query, key) {
+  async retrieve(question, key, { docIds, previous } = {}) {
     const { entries, bm25 } = this.#corpus();
-    const rankings = [bm25.search(query, 20)];
+    const filter = docIds?.length ? (e) => docIds.includes(e.doc.id) : undefined;
+    const query = expandQuery(question);
+    let followUp = false;
+    if (previous && isFollowUp(question, query)) {
+      const prev = expandQuery(previous);
+      for (const [t, w] of prev.terms) if (!query.terms.has(t)) query.terms.set(t, w * 0.5);
+      followUp = true;
+    }
+    const lexical = bm25.search(query, 30, filter);
+    const rankings = [lexical];
     let aiError;
     if (key && entries.some((e) => e.vector)) {
       try {
-        const [vector] = await embed(key, [query], "RETRIEVAL_QUERY");
-        rankings.push(vectorSearch(entries, vector, 20));
+        const [vector] = await embed(key, [question], "RETRIEVAL_QUERY");
+        rankings.push(vectorSearch(entries, vector, 30, filter));
       } catch (error) {
         aiError = error;
       }
     }
-    return { hits: fuse(rankings, 6), aiError };
+    // Comparisons ("britama vs simpedes"): make sure each named product gets its own passages.
+    const named = query.original.filter((t) => {
+      const n = entries.filter((e) => bm25.nameHas(e, t)).length;
+      return n > 0 && n < entries.length;
+    });
+    if (named.length >= 2) {
+      for (const t of named) {
+        const own = bm25.search(query, 2, (e) => (!filter || filter(e)) && bm25.nameHas(e, t));
+        lexical.push(...own);
+        rankings.unshift(own);
+      }
+    }
+    const coverage = new Map(lexical.map((h) => [h.entry, h.coverage]));
+    const hits = fuse(rankings, 5).map((h) => ({ ...h, coverage: coverage.get(h.entry) || 0 }));
+    return {
+      hits,
+      aiError,
+      query,
+      followUp,
+      named: named.length >= 2 ? named : [],
+      missing: bm25.missing(query.original),
+      best: Math.max(0, ...lexical.slice(0, 5).map((h) => h.coverage)),
+    };
   }
 
-  async ask(question, history = []) {
+  async ask(question, history = [], { docIds } = {}) {
     const key = this.getKey();
     if (!this.#corpus().entries.length) {
       return {
@@ -145,23 +184,46 @@ export class Rag {
         sources: [],
       };
     }
-    const query = key ? await this.#standalone(key, question, history) : question;
-    const { hits, aiError } = await this.retrieve(query, key);
+    const previous = [...history].reverse().find((m) => m.role === "user")?.content;
+    const standalone = key && history.length ? await this.#standalone(key, question, history) : null;
+    const { hits, aiError, query, followUp, missing, best, named } = await this.retrieve(standalone || question, key, {
+      docIds,
+      previous: standalone ? null : previous,
+    });
     const sources = hits.map(({ entry }, i) => ({
       n: i + 1,
       docId: entry.doc.id,
       docName: entry.doc.name,
+      title: displayName(entry.doc.name),
       page: entry.page,
+      section: sectionOf(entry.text),
       text: entry.text,
     }));
-    if (!sources.length) {
+    const terms = [...query.terms.keys()];
+    const context = followUp ? `Dicari bersama pertanyaan sebelumnya: "${previous.slice(0, 120)}"` : undefined;
+    if (!query.original.length) {
       return {
         mode: key ? "ai" : "search",
-        answer: "Tidak ditemukan bagian dokumen yang cocok dengan pertanyaan ini. Coba gunakan kata kunci lain.",
+        answer:
+          "Halo! Tanyakan sesuatu tentang isi dokumen yang diunggah, misalnya biaya administrasi, saldo minimum, atau syarat pembukaan rekening.",
         sources: [],
       };
     }
-    if (!key) return { mode: "search", answer: null, sources };
+    const near = Math.max(0, ...sources.slice(0, 3).map((s) => windowCoverage(s, query, named)));
+    if (!sources.length || (!key && ((!named.length && best < 0.6) || near < 0.75))) {
+      const absent = missing.length
+        ? ` Kata "${missing.join('", "')}" tidak ada di dokumen mana pun.`
+        : "";
+      return {
+        mode: key ? "ai" : "search",
+        notFound: true,
+        answer: `Informasi ini tidak ditemukan di dokumen yang diunggah.${absent} Coba kata lain, atau pastikan dokumen yang memuatnya sudah diunggah.`,
+        context,
+        terms,
+        sources: sources.slice(0, 2),
+      };
+    }
+    if (!key) return { mode: "search", answer: null, context, terms, highlights: highlights(sources, query), sources };
     try {
       if (aiError) throw aiError;
       const context = sources
@@ -176,15 +238,73 @@ export class Rag {
         parts: [{ text: `Kutipan dokumen:\n\n${context}\n\nPertanyaan: ${question}` }],
       });
       const answer = await generate(key, { system: SYSTEM, contents });
-      return { mode: "ai", answer: answer || "Maaf, AI tidak memberikan jawaban.", sources };
+      return { mode: "ai", answer: answer || "Maaf, AI tidak memberikan jawaban.", terms, sources };
     } catch (error) {
       console.error("generate:", error.message);
       return {
         mode: "search",
         notice: "AI sedang tidak dapat dihubungi, jadi berikut bagian dokumen yang paling relevan.",
         answer: null,
+        terms,
+        highlights: highlights(sources, query),
         sources,
       };
     }
   }
+}
+
+const FOLLOW_UP = /^(kalau|kalo|klo|kl|bagaimana dengan|gimana dengan|gmn dengan|terus|lalu|trus|yang|yg|untuk yang|utk yg|dan|how about|what about)\b/i;
+
+function isFollowUp(question, query) {
+  return FOLLOW_UP.test(question.trim()) || query.original.length <= 2;
+}
+
+function sectionOf(text) {
+  const lines = text.split("\n").map((l) => l.trim());
+  return (
+    lines.find((l) => /^(pasal|bab|article|section)\s+[\w.]+/i.test(l))?.slice(0, 80)
+  );
+}
+
+const NUMERIC = /\d/;
+
+// Share of the user's terms (or synonyms) found together within any 3 consecutive lines.
+function windowCoverage(source, query, named = []) {
+  const terms = query.original.filter((t) => !named.includes(t));
+  if (named.length) terms.push(named);
+  if (!terms.length) return 0;
+  const name = tokenize(source.title);
+  const lines = source.text.split("\n").map((l) => new Set(tokenize(l)));
+  let best = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const window = new Set([...name, ...lines[i], ...(lines[i + 1] || []), ...(lines[i + 2] || [])]);
+    const has = (t) => (Array.isArray(t) ? t.some(has) : synonymsOf(t).some((s) => window.has(s)));
+    best = Math.max(best, terms.filter(has).length / terms.length);
+  }
+  return best;
+}
+
+// Picks the lines that best match the question, so search-only mode can show a short answer.
+function highlights(sources, query) {
+  const scored = [];
+  sources.slice(0, 3).forEach((s, si) => {
+    const lines = s.text.split("\n");
+    lines.forEach((line, li) => {
+      const toks = new Set(tokenize(line));
+      let score = 0;
+      for (const [t, w] of query.terms) if (toks.has(t)) score += w;
+      if (!score) return;
+      let text = line.trim();
+      if (!NUMERIC.test(text) && lines[li + 1] && NUMERIC.test(lines[li + 1]) && lines[li + 1].length < 80)
+        text += ` ${lines[li + 1].trim()}`;
+      if (NUMERIC.test(text)) score += 0.5;
+      score -= si * 0.8;
+      scored.push({ n: s.n, text: text.slice(0, 240), score });
+    });
+  });
+  const seen = new Set();
+  return scored
+    .sort((a, b) => b.score - a.score)
+    .filter((h) => !seen.has(h.text) && seen.add(h.text))
+    .slice(0, 3);
 }

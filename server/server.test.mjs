@@ -68,3 +68,61 @@ test("non-text PDFs are flagged as scanned", async () => {
   assert.equal(doc.status, "error");
   assert.match(doc.error, /scan/);
 });
+
+async function riplayRag() {
+  const store = await new Store(await mkdtemp(join(tmpdir(), "tanya-"))).load();
+  const rag = new Rag(store, { getKey: () => null });
+  for (const name of ["RIPLAY_BRITAMA.pdf", "RIPLAY_SIMPEDES.pdf"]) {
+    const doc = await store.addFile(name, await readFile(fixture));
+    await rag.ingest(doc);
+  }
+  return { store, rag };
+}
+
+test("search-only says not found when the question's key words are absent", async () => {
+  const { rag } = await riplayRag();
+  const result = await rag.ask("Berapa gaji pegawai BRI tahun 2026?");
+  assert.equal(result.notFound, true);
+  assert.match(result.answer, /tidak ditemukan/);
+  assert.match(result.answer, /gaji/);
+});
+
+test("identical uploads are detected by content hash", async () => {
+  const { store } = await riplayRag();
+  const [a, b] = store.documents;
+  assert.equal(a.hash, b.hash);
+  assert.equal(store.findByHash(a.hash).hash, a.hash);
+});
+
+test("duplicate passages are collapsed and comparisons cover both products", async () => {
+  const { rag } = await riplayRag();
+  const result = await rag.ask("biaya ganti kartu hilang britama atau simpedes");
+  const prints = result.sources.map((s) => s.text.slice(0, 200));
+  assert.equal(new Set(prints).size, prints.length);
+  assert.ok(result.sources.length >= 1);
+});
+
+test("search-only follow-ups reuse the previous question", async () => {
+  const { rag } = await riplayRag();
+  const result = await rag.ask("kalau yang hilang?", [
+    { role: "user", content: "Berapa biaya ganti kartu?" },
+  ]);
+  assert.ok(result.context?.includes("pertanyaan sebelumnya"));
+});
+
+test("replacing a document removes the old version once the new one is ready", async () => {
+  const { store, rag } = await riplayRag();
+  const old = store.documents[0];
+  const buffer = Buffer.concat([await readFile(fixture), Buffer.from("\n%versi-baru\n")]);
+  const doc = await store.addFile("RIPLAY_BRITAMA_2026.pdf", buffer, { replaces: old.id });
+  await rag.ingest(doc);
+  assert.equal(store.get(old.id), undefined);
+  assert.equal(doc.replacedName, old.name);
+});
+
+test("layoutLines keeps a table label next to its value", async () => {
+  const { layoutLines } = await import("./pdf.mjs");
+  const item = (str, x, y, width) => ({ str, transform: [1, 0, 0, 9, x, y], width, height: 9 });
+  const text = layoutLines([item("Rp12.000", 200, 96, 40), item("Biaya Administrasi", 50, 100, 80), item("Setoran Awal", 50, 120, 60)]);
+  assert.equal(text, "Setoran Awal\nBiaya Administrasi  ·  Rp12.000");
+});

@@ -3,7 +3,7 @@ import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { resolve, extname, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Store } from "./store.mjs";
+import { Store, sha256 } from "./store.mjs";
 import { Rag } from "./rag.mjs";
 import { embed, CHAT_MODEL } from "./gemini.mjs";
 
@@ -85,7 +85,14 @@ async function api(req, res, url) {
     const buffer = await readBody(req, MAX_UPLOAD);
     if (buffer.subarray(0, 5).toString("latin1") !== "%PDF-")
       return send(res, 400, { error: "File ini bukan PDF." });
-    const doc = await store.addFile(name, buffer);
+    const replaces = url.searchParams.get("replace") || undefined;
+    if (replaces && !store.get(replaces))
+      return send(res, 404, { error: "Dokumen yang mau diganti tidak ditemukan." });
+    const duplicate = store.findByHash(sha256(buffer));
+    if (duplicate && duplicate.id !== replaces)
+      return send(res, 409, { error: `File ini sudah ada di pustaka sebagai "${duplicate.name}".` });
+    if (duplicate) return send(res, 409, { error: "File pengganti sama persis dengan versi lama." });
+    const doc = await store.addFile(name, buffer, { replaces });
     rag.ingest(doc);
     return send(res, 201, { document: publicDoc(doc) });
   }
@@ -93,6 +100,12 @@ async function api(req, res, url) {
   const match = pathname.match(/^\/api\/documents\/([\w-]+)(\/file)?$/);
   if (match) {
     const doc = store.get(match[1]);
+    if (!doc && match[2] && method === "GET") {
+      res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" });
+      return res.end(
+        `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Dokumen sudah dihapus</title><body style="font-family:system-ui;max-width:32rem;margin:15vh auto;padding:0 1rem;color:#1c2b3d"><h1 style="font-size:1.4rem">Dokumen sudah dihapus</h1><p>PDF yang dikutip jawaban ini sudah dihapus dari pustaka Tanya BRI. Unggah ulang dokumennya bila masih diperlukan.</p><p><a href="/" style="color:#0a3d7a">Kembali ke Tanya BRI</a></p></body>`,
+      );
+    }
     if (!doc) return send(res, 404, { error: "Dokumen tidak ditemukan." });
     if (match[2] && method === "GET") {
       const file = store.filePath(doc.id);
@@ -113,7 +126,7 @@ async function api(req, res, url) {
   }
 
   if (pathname === "/api/chat" && method === "POST") {
-    const { question, history } = await readJson(req);
+    const { question, history, docIds } = await readJson(req);
     const text = String(question || "").trim().slice(0, 2000);
     if (!text) return send(res, 400, { error: "Pertanyaan kosong." });
     const turns = Array.isArray(history)
@@ -121,7 +134,8 @@ async function api(req, res, url) {
           .filter((m) => m && typeof m.content === "string" && m.content.trim())
           .map((m) => ({ role: m.role === "user" ? "user" : "assistant", content: m.content }))
       : [];
-    return send(res, 200, await rag.ask(text, turns));
+    const scope = Array.isArray(docIds) ? docIds.filter((id) => typeof id === "string").slice(0, 50) : [];
+    return send(res, 200, await rag.ask(text, turns, { docIds: scope }));
   }
 
   if (pathname === "/api/settings/key" && method === "PUT") {

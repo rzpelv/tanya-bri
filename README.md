@@ -27,11 +27,11 @@ Environment variables:
 
 ## How it works
 
-1. **Upload** (`POST /api/documents`): the PDF is stored in `DATA_DIR/files`, text is extracted per page with pdf.js, and split into ~1,100-character overlapping chunks that keep their page number.
-2. **Index**: chunks are searchable right away with BM25 keyword search (Indonesian stopwords). With a Gemini key, each chunk is also embedded; documents uploaded before a key was set are embedded once the key is saved.
-3. **Ask** (`POST /api/chat`): follow-up questions are rewritten into standalone queries, keyword and vector results are merged with reciprocal rank fusion, and the top 6 passages go to Gemini with instructions to answer only from them and cite `[n]`.
+1. **Upload** (`POST /api/documents`): identical files are refused (SHA-256), `?replace=<id>` uploads a new version that removes the old one once it is indexed. The PDF is stored in `DATA_DIR/files`, text is extracted per page with pdf.js (rebuilt line by line from text positions so table labels stay next to their values), and split into ~1,100-character overlapping chunks that keep their page number.
+2. **Index**: chunks are searchable right away with BM25 keyword search (Indonesian stopwords, casual/formal and Indonesian/English synonyms, file-name boost, a mild penalty for very long documents). With a Gemini key, each chunk is also embedded; documents uploaded before a key was set are embedded once the key is saved.
+3. **Ask** (`POST /api/chat`): follow-up questions are rewritten into standalone queries, keyword and vector results are merged with reciprocal rank fusion, at most 2 passages per document with duplicates dropped, and the top 5 passages go to Gemini with instructions to answer only from them and cite `[n]`.
 
-Without a key the app runs in **mode pencarian**: it shows the most relevant passages instead of an AI answer. If Gemini fails, it falls back to the same view.
+Without a key the app runs in **mode pencarian**: it shows the best-matching lines with highlights, then the passages. It says "tidak ditemukan" when the question's words are missing or never appear together in one place, and short follow-ups ("kalau simpedes?") are searched together with the previous question. Questions can be limited to one document. If Gemini fails, it falls back to the same view.
 
 ## Limits of this first version
 

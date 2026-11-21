@@ -9,6 +9,7 @@ import {
   KeyRound,
   Loader2,
   Menu,
+  RefreshCw,
   MessageSquarePlus,
   Search,
   Settings,
@@ -17,7 +18,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { api, fileUrl } from "./api.js";
+import { api, fileUrl, displayName } from "./api.js";
 import { Markdown } from "./markdown.jsx";
 import "./style.css";
 
@@ -40,7 +41,7 @@ function loadMessages() {
   }
 }
 
-function DocumentItem({ doc, onRemove }) {
+function DocumentItem({ doc, onRemove, onReplace }) {
   let state;
   if (doc.status === "processing")
     state = (
@@ -76,17 +77,30 @@ function DocumentItem({ doc, onRemove }) {
       </div>
       <div className="doc-body">
         {doc.status === "ready" ? (
-          <a href={`/api/documents/${doc.id}/file`} target="_blank" rel="noreferrer" className="doc-name">
-            {doc.name}
+          <a href={`/api/documents/${doc.id}/file`} target="_blank" rel="noreferrer" className="doc-name" title={doc.name}>
+            {displayName(doc.name)}
           </a>
         ) : (
-          <span className="doc-name">{doc.name}</span>
+          <span className="doc-name" title={doc.name}>{displayName(doc.name)}</span>
         )}
         {state}
+        {doc.replacedName && <span className="doc-state">Menggantikan {displayName(doc.replacedName)}</span>}
       </div>
+      {doc.status === "ready" && (
+        <button
+          type="button"
+          className="icon-button subtle"
+          aria-label={`Ganti versi ${doc.name}`}
+          title="Ganti dengan versi baru"
+          onClick={() => onReplace(doc)}
+        >
+          <RefreshCw size={15} />
+        </button>
+      )}
       <button
         type="button"
         className="icon-button subtle"
+        title="Hapus"
         aria-label={`Hapus ${doc.name}`}
         onClick={() => onRemove(doc)}
       >
@@ -96,16 +110,26 @@ function DocumentItem({ doc, onRemove }) {
   );
 }
 
-function Sources({ sources, open, setOpen, expandAll }) {
+function Highlight({ text, terms }) {
+  if (!terms?.length) return text;
+  const set = new Set(terms);
+  return text.split(/([\p{L}\p{N}]+)/u).map((part, i) => {
+    const w = part.toLowerCase();
+    const stem = w.length > 5 ? w.replace(/(nya|lah|kah|pun)$/, "") : w;
+    return set.has(stem) ? <mark key={i}>{part}</mark> : part;
+  });
+}
+
+function Sources({ sources, open, setOpen, expandAll, terms, known }) {
   if (!sources?.length) return null;
   return (
     <div className="sources">
       {sources.map((s) => {
-        const isOpen = expandAll ? !open.has(-s.n) : open.has(s.n);
+        const isOpen = expandAll && s.n === 1 ? !open.has(-s.n) : open.has(s.n);
         const toggle = () =>
           setOpen((prev) => {
             const next = new Set(prev);
-            const id = expandAll ? -s.n : s.n;
+            const id = expandAll && s.n === 1 ? -s.n : s.n;
             next.has(id) ? next.delete(id) : next.add(id);
             return next;
           });
@@ -114,16 +138,20 @@ function Sources({ sources, open, setOpen, expandAll }) {
             <button type="button" className="source-head" onClick={toggle} aria-expanded={isOpen}>
               <span className="source-n">{s.n}</span>
               <span className="source-title">
-                {s.docName} <span className="muted">· hal. {s.page}</span>
+                {s.title || displayName(s.docName)} <span className="muted">· hal. {s.page}{s.section ? ` · ${s.section}` : ""}</span>
               </span>
               <ChevronDown size={16} className="chev" />
             </button>
             {isOpen && (
               <div className="source-body">
-                <p>{s.text}</p>
-                <a href={fileUrl(s)} target="_blank" rel="noreferrer">
-                  Buka PDF di halaman {s.page}
-                </a>
+                <p><Highlight text={s.text} terms={terms} /></p>
+                {known && !known.has(s.docId) ? (
+                  <span className="muted small">Dokumen ini sudah dihapus dari pustaka.</span>
+                ) : (
+                  <a href={fileUrl(s)} target="_blank" rel="noreferrer">
+                    Buka PDF di halaman {s.page}
+                  </a>
+                )}
               </div>
             )}
           </div>
@@ -133,7 +161,7 @@ function Sources({ sources, open, setOpen, expandAll }) {
   );
 }
 
-function AssistantMessage({ message }) {
+function AssistantMessage({ message, known }) {
   const [open, setOpen] = useState(() => new Set());
   const ref = useRef(null);
   const searchOnly = message.mode === "search";
@@ -152,15 +180,45 @@ function AssistantMessage({ message }) {
       ) : searchOnly ? (
         <>
           {message.notice && <p className="notice">{message.notice}</p>}
-          <p className="search-lead">
-            <Search size={15} /> Bagian dokumen yang paling relevan:
-          </p>
+          {message.context && <p className="muted small context">{message.context}</p>}
+          {message.content ? (
+            <p className={message.notFound ? "not-found" : ""}>{message.content}</p>
+          ) : null}
+          {message.highlights?.length > 0 && (
+            <div className="quick">
+              <p className="search-lead">
+                <Search size={15} /> Kutipan paling cocok
+              </p>
+              <ul>
+                {message.highlights.map((h, i) => (
+                  <li key={i}>
+                    <Highlight text={h.text} terms={message.terms} />{" "}
+                    <button type="button" className="cite" onClick={() => cite(h.n)}>
+                      {h.n}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {message.sources?.length > 0 && (
+            <p className="sources-label">
+              {message.notFound ? "Bagian terdekat (bukan jawaban):" : "Sumber"}
+            </p>
+          )}
         </>
       ) : (
         <Markdown text={message.content} onCite={cite} />
       )}
       {message.sources?.length > 0 && !searchOnly && <p className="sources-label">Sumber</p>}
-      <Sources sources={message.sources} open={open} setOpen={setOpen} expandAll={searchOnly} />
+      <Sources
+        sources={message.sources}
+        open={open}
+        setOpen={setOpen}
+        expandAll={searchOnly && !message.notFound}
+        terms={message.terms}
+        known={known}
+      />
     </div>
   );
 }
@@ -261,7 +319,11 @@ function App() {
   const [drawer, setDrawer] = useState(false);
   const [settings, setSettings] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [filter, setFilter] = useState("");
+  const [scope, setScope] = useState("");
+  const [replacing, setReplacing] = useState(null);
   const fileInput = useRef(null);
+  const replaceInput = useRef(null);
   const endRef = useRef(null);
   const textRef = useRef(null);
 
@@ -288,15 +350,22 @@ function App() {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, asking]);
 
-  const upload = async (files) => {
-    const pdfs = [...files].filter((f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name));
-    setUploadError(pdfs.length === files.length ? "" : "Hanya file PDF yang bisa diunggah.");
+  const ready = documents.filter((d) => d.status === "ready");
+
+  const upload = async (files, replace) => {
+    const all = [...files];
+    const pdfs = all.filter((f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name));
+    const errors = all
+      .filter((f) => !pdfs.includes(f))
+      .map((f) => `${f.name}: bukan PDF. Hanya file PDF yang bisa diunggah.`);
+    setUploadError(errors.join("\n"));
     for (const file of pdfs) {
       setUploading((n) => n + 1);
       try {
-        await api.upload(file);
+        await api.upload(file, replace);
       } catch (e) {
-        setUploadError(`${file.name}: ${e.message}`);
+        errors.push(`${file.name}: ${e.message}`);
+        setUploadError(errors.join("\n"));
       } finally {
         setUploading((n) => n - 1);
         refresh();
@@ -307,12 +376,18 @@ function App() {
   const remove = async (doc) => {
     if (!confirm(`Hapus "${doc.name}" dari pustaka?`)) return;
     await api.remove(doc.id).catch(() => {});
+    if (scope === doc.id) setScope("");
     refresh();
+  };
+
+  const replace = (doc) => {
+    setReplacing(doc);
+    replaceInput.current?.click();
   };
 
   const ask = async (text) => {
     const question = text.trim();
-    if (!question || asking) return;
+    if (!question || asking || !ready.length) return;
     const history = messages
       .filter((m) => !m.error && (m.role === "user" || m.mode === "ai"))
       .slice(-6)
@@ -321,10 +396,20 @@ function App() {
     setInput("");
     setAsking(true);
     try {
-      const result = await api.ask(question, history);
+      const result = await api.ask(question, history, scope ? [scope] : []);
       setMessages((m) => [
         ...m,
-        { role: "assistant", content: result.answer || "", mode: result.mode, notice: result.notice, sources: result.sources },
+        {
+          role: "assistant",
+          content: result.answer || "",
+          mode: result.mode,
+          notice: result.notice,
+          notFound: result.notFound,
+          context: result.context,
+          terms: result.terms,
+          highlights: result.highlights,
+          sources: result.sources,
+        },
       ]);
     } catch (e) {
       setMessages((m) => [...m, { role: "assistant", error: e.message }]);
@@ -334,7 +419,11 @@ function App() {
     }
   };
 
-  const ready = documents.filter((d) => d.status === "ready");
+  const known = new Set(documents.map((d) => d.id));
+  const query = filter.trim().toLowerCase();
+  const shown = query
+    ? documents.filter((d) => d.name.toLowerCase().replace(/_/g, " ").includes(query))
+    : documents;
 
   const sidebar = (
     <aside
@@ -375,15 +464,36 @@ function App() {
           e.target.value = "";
         }}
       />
-      {uploadError && <p className="error-text small">{uploadError}</p>}
+      <input
+        ref={replaceInput}
+        type="file"
+        accept="application/pdf,.pdf"
+        hidden
+        onChange={(e) => {
+          if (e.target.files[0] && replacing) upload([e.target.files[0]], replacing.id);
+          setReplacing(null);
+          e.target.value = "";
+        }}
+      />
       <div className="section-label">
-        Pustaka dokumen <span>{ready.length}</span>
+        Pustaka dokumen{" "}
+        <span>{ready.length === documents.length ? ready.length : `${ready.length} siap / ${documents.length}`}</span>
       </div>
+      {documents.length > 5 && (
+        <input
+          className="doc-filter"
+          type="search"
+          placeholder="Cari dokumen…"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
+      )}
       {documents.length ? (
         <ul className="docs">
-          {documents.map((d) => (
-            <DocumentItem key={d.id} doc={d} onRemove={remove} />
+          {shown.map((d) => (
+            <DocumentItem key={d.id} doc={d} onRemove={remove} onReplace={replace} />
           ))}
+          {!shown.length && <li className="muted small">Tidak ada dokumen yang cocok.</li>}
         </ul>
       ) : (
         <p className="muted small empty-docs">
@@ -421,6 +531,15 @@ function App() {
             </button>
           )}
         </header>
+        {uploadError && (
+          <div className="toast" role="alert">
+            <AlertTriangle size={16} />
+            <span>{uploadError}</span>
+            <button type="button" className="icon-button subtle" onClick={() => setUploadError("")} aria-label="Tutup">
+              <X size={16} />
+            </button>
+          </div>
+        )}
         <div className="thread">
           {messages.length === 0 ? (
             <div className="welcome">
@@ -458,7 +577,7 @@ function App() {
                   {m.content}
                 </div>
               ) : (
-                <AssistantMessage key={i} message={m} />
+                <AssistantMessage key={i} message={m} known={known} />
               ),
             )
           )}
@@ -469,6 +588,19 @@ function App() {
           )}
           <div ref={endRef} />
         </div>
+        {ready.length > 1 && (
+          <div className="scope">
+            <label htmlFor="scope">Cari di</label>
+            <select id="scope" value={scope} onChange={(e) => setScope(e.target.value)}>
+              <option value="">Semua dokumen ({ready.length})</option>
+              {ready.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {displayName(d.name)}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <form
           className="composer"
           onSubmit={(e) => {
@@ -480,6 +612,7 @@ function App() {
             ref={textRef}
             rows={1}
             value={input}
+            disabled={!ready.length}
             placeholder={ready.length ? "Tulis pertanyaan…" : "Unggah PDF dulu untuk mulai bertanya"}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
@@ -489,7 +622,7 @@ function App() {
               }
             }}
           />
-          <button type="submit" className="send" disabled={!input.trim() || asking} aria-label="Kirim">
+          <button type="submit" className="send" disabled={!input.trim() || asking || !ready.length} aria-label="Kirim">
             <ArrowUp size={18} />
           </button>
         </form>

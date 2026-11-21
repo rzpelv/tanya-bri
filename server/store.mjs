@@ -1,6 +1,8 @@
 import { mkdir, readFile, writeFile, rename, rm, chmod } from "node:fs/promises";
 import { join } from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
+
+export const sha256 = (buffer) => createHash("sha256").update(buffer).digest("hex");
 
 export class Store {
   constructor(dir) {
@@ -21,6 +23,8 @@ export class Store {
         doc.status = "error";
         doc.error = "Pemrosesan terputus. Hapus lalu unggah ulang dokumen ini.";
       }
+      if (!doc.hash)
+        doc.hash = await readFile(this.filePath(doc.id)).then(sha256, () => undefined);
       if (doc.status === "ready")
         this.chunks.set(doc.id, (await this.#read(`chunks/${doc.id}.json`)) || []);
     }
@@ -64,10 +68,16 @@ export class Store {
     return join(this.dir, "files", `${id}.pdf`);
   }
 
-  async addFile(name, buffer) {
+  findByHash(hash) {
+    return this.documents.find((d) => d.hash === hash && d.status !== "error");
+  }
+
+  async addFile(name, buffer, { replaces } = {}) {
     const doc = {
       id: randomUUID(),
       name,
+      hash: sha256(buffer),
+      ...(replaces ? { replaces } : {}),
       size: buffer.length,
       createdAt: new Date().toISOString(),
       status: "processing",
