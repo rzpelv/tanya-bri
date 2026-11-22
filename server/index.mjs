@@ -93,14 +93,14 @@ function authed(req) {
   return given.length === want.length && timingSafeEqual(given, want);
 }
 
-const clientIp = (req) => String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+// One shared bucket: forwarded IPs can be spoofed, and the app has a single shared code.
 const failures = new Map();
 
 async function login(req, res) {
-  const ip = clientIp(req);
+  const ip = "all";
   const now = Date.now();
   const entry = failures.get(ip);
-  if (entry && entry.until > now && entry.count >= 10)
+  if (entry && entry.until > now && entry.count >= 30)
     return send(res, 429, { error: "Terlalu banyak percobaan. Coba lagi dalam 15 menit." });
   const { code } = await readJson(req);
   const expected = accessCode();
