@@ -15,7 +15,7 @@ const MAX_UPLOAD = 50 * 1024 * 1024;
 
 const store = await new Store(dataDir).load();
 const envKey = ENV_KEY;
-const DAILY_AI_LIMIT = Number(process.env.AI_DAILY_LIMIT) || Infinity;
+const DAILY_AI_LIMIT = process.env.AI_DAILY_LIMIT ? Number(process.env.AI_DAILY_LIMIT) : Infinity;
 const getKey = () => envKey || store.config[CONFIG_KEY] || null;
 const rag = new Rag(store, { getKey });
 rag.embedMissing();
