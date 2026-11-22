@@ -480,7 +480,7 @@ function App() {
         Pustaka dokumen{" "}
         <span>{ready.length === documents.length ? ready.length : `${ready.length} siap / ${documents.length}`}</span>
       </div>
-      {documents.length > 5 && (
+      {(documents.length > 5 || filter) && (
         <input
           className="doc-filter"
           type="search"
