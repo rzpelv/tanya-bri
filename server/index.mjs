@@ -116,7 +116,9 @@ async function api(req, res, url) {
         "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(doc.name)}`,
         "X-Content-Type-Options": "nosniff",
       });
-      return createReadStream(file).pipe(res);
+      return createReadStream(file)
+        .on("error", () => res.destroy())
+        .pipe(res);
     }
     if (!match[2] && method === "DELETE") {
       await store.remove(doc.id);
