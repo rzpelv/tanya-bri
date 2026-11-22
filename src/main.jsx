@@ -387,7 +387,6 @@ function App() {
   const [settings, setSettings] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [filter, setFilter] = useState("");
-  const [scope, setScope] = useState("");
   const [replacing, setReplacing] = useState(null);
   const fileInput = useRef(null);
   const replaceInput = useRef(null);
@@ -418,7 +417,6 @@ function App() {
   }, [messages, asking]);
 
   const ready = documents.filter((d) => d.status === "ready");
-  const activeScope = ready.some((d) => d.id === scope) ? scope : "";
 
   const upload = async (files, replace) => {
     const all = [...files];
@@ -444,7 +442,6 @@ function App() {
   const remove = async (doc) => {
     if (!confirm(`Hapus "${doc.name}" dari pustaka?`)) return;
     await api.remove(doc.id).catch(() => {});
-    if (scope === doc.id) setScope("");
     refresh();
   };
 
@@ -464,7 +461,7 @@ function App() {
     setInput("");
     setAsking(true);
     try {
-      const result = await api.ask(question, history, activeScope ? [activeScope] : []);
+      const result = await api.ask(question, history);
       setMessages((m) => [
         ...m,
         {
@@ -644,19 +641,6 @@ function App() {
           )}
           <div ref={endRef} />
         </div>
-        {ready.length > 1 && (
-          <div className="scope">
-            <label htmlFor="scope">Cari di</label>
-            <select id="scope" value={activeScope} onChange={(e) => setScope(e.target.value)}>
-              <option value="">Semua dokumen ({ready.length})</option>
-              {ready.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {displayName(d.name)}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
         <form
           className="composer"
           onSubmit={(e) => {

@@ -742,26 +742,6 @@ mark {
   overflow: hidden;
   word-break: break-word;
 }
-.scope {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 760px;
-  width: calc(100% - 32px);
-  margin: 0 auto 6px;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-}
-.scope select {
-  flex: 1;
-  min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 5px 8px;
-  font: inherit;
-  color: var(--text);
-  background: var(--surface);
-}
 .composer textarea:disabled {
   cursor: not-allowed;
 }

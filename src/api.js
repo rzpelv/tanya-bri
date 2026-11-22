@@ -24,7 +24,7 @@ export const api = {
       body: file,
     }),
   remove: (id) => request(`/api/documents/${id}`, { method: "DELETE" }),
-  ask: (question, history, docIds) => request("/api/chat", json("POST", { question, history, docIds })),
+  ask: (question, history) => request("/api/chat", json("POST", { question, history })),
   saveKey: (key) => request("/api/settings/key", json("PUT", { key })),
   removeKey: () => request("/api/settings/key", { method: "DELETE" }),
 };
