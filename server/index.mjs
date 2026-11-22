@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { Store, sha256 } from "./store.mjs";
 import { Rag } from "./rag.mjs";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { embed, CHAT_MODEL, PROVIDER } from "./ai.mjs";
+import { embed, CHAT_MODEL, PROVIDER, ENV_KEY, CONFIG_KEY } from "./ai.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const staticRoot = resolve(process.env.STATIC_DIR || join(here, "..", "dist"));
@@ -14,9 +14,9 @@ const dataDir = resolve(process.env.DATA_DIR || join(here, "..", "data"));
 const MAX_UPLOAD = 50 * 1024 * 1024;
 
 const store = await new Store(dataDir).load();
-const envKey = (process.env.AI_API_KEY || process.env.GEMINI_API_KEY)?.trim();
+const envKey = ENV_KEY;
 const DAILY_AI_LIMIT = Number(process.env.AI_DAILY_LIMIT || 300);
-const getKey = () => envKey || store.config.geminiKey || null;
+const getKey = () => envKey || store.config[CONFIG_KEY] || null;
 const rag = new Rag(store, { getKey });
 rag.embedMissing();
 
@@ -68,7 +68,7 @@ const publicDoc = ({ embedding, ...doc }) => ({ ...doc, embedding: Boolean(embed
 function status() {
   return {
     ai: Boolean(getKey()),
-    keySource: envKey ? "env" : store.config.geminiKey ? "app" : null,
+    keySource: envKey ? "env" : store.config[CONFIG_KEY] ? "app" : null,
     model: CHAT_MODEL,
     provider: PROVIDER,
   };
@@ -224,14 +224,14 @@ async function api(req, res, url) {
     } catch (error) {
       return send(res, 400, { error: `API key ditolak ${PROVIDER}: ${error.message}` });
     }
-    store.config.geminiKey = value;
+    store.config[CONFIG_KEY] = value;
     await store.saveConfig();
     rag.embedMissing();
     return send(res, 200, status());
   }
 
   if (pathname === "/api/settings/key" && method === "DELETE") {
-    delete store.config.geminiKey;
+    delete store.config[CONFIG_KEY];
     await store.saveConfig();
     return send(res, 200, status());
   }
