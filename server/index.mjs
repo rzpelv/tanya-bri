@@ -191,8 +191,8 @@ async function serveStatic(req, res, url) {
 
 http
   .createServer(async (req, res) => {
-    const url = new URL(req.url, "http://localhost");
     try {
+      const url = new URL(req.url, "http://localhost");
       if (url.pathname.startsWith("/api/")) return await api(req, res, url);
       return await serveStatic(req, res, url);
     } catch (error) {
