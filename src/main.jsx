@@ -351,6 +351,7 @@ function App() {
   }, [messages, asking]);
 
   const ready = documents.filter((d) => d.status === "ready");
+  const activeScope = ready.some((d) => d.id === scope) ? scope : "";
 
   const upload = async (files, replace) => {
     const all = [...files];
@@ -396,7 +397,7 @@ function App() {
     setInput("");
     setAsking(true);
     try {
-      const result = await api.ask(question, history, scope ? [scope] : []);
+      const result = await api.ask(question, history, activeScope ? [activeScope] : []);
       setMessages((m) => [
         ...m,
         {
@@ -591,7 +592,7 @@ function App() {
         {ready.length > 1 && (
           <div className="scope">
             <label htmlFor="scope">Cari di</label>
-            <select id="scope" value={scope} onChange={(e) => setScope(e.target.value)}>
+            <select id="scope" value={activeScope} onChange={(e) => setScope(e.target.value)}>
               <option value="">Semua dokumen ({ready.length})</option>
               {ready.map((d) => (
                 <option key={d.id} value={d.id}>
