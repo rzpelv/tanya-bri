@@ -24,7 +24,7 @@ Environment variables:
 | `GEMINI_API_KEY` | none | Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey). Can also be entered in the app under **Pengaturan AI**. |
 | `AI_BASE_URL` | none | OpenAI-compatible API (e.g. `https://router.classai.id/v1`). When set, it is used instead of Gemini. |
 | `AI_API_KEY` | none | Key for `AI_BASE_URL` |
-| `AI_MODEL` / `AI_EMBED_MODEL` | `claude-haiku-4.5` / `text-embedding-3-small` | Answer and embedding models for `AI_BASE_URL` |
+| `AI_MODEL` / `AI_EMBED_MODEL` | `qwen3.7-plus` / `text-embedding-3-small` | Answer and embedding models for `AI_BASE_URL` |
 | `AI_DAILY_LIMIT` | unlimited | Optional cap on AI answers per day; after that the app falls back to search-only until midnight UTC |
 | `ACCESS_CODE` | none | Shared access code (or `accessCode` in `DATA_DIR/config.json`). When set, every API call needs a login; the browser is remembered for a year. |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | Answer model |
