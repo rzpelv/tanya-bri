@@ -1,0 +1,15 @@
+{
+  "name": "Tanya BRI",
+  "short_name": "Tanya BRI",
+  "description": "Asisten AI untuk ketentuan BRI dari PDF yang diunggah.",
+  "lang": "id",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f7fa",
+  "theme_color": "#0a3d7a",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
