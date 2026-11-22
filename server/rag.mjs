@@ -51,7 +51,7 @@ export class Rag {
         }
         await this.store.saveChunks(doc.id, chunks);
         Object.assign(doc, { status: "ready", chunks: chunks.length, error: undefined });
-        if (doc.replaces) {
+        if (doc.replaces && this.store.get(doc.id)) {
           const old = this.store.get(doc.replaces);
           if (old) {
             doc.replacedName = old.name;
