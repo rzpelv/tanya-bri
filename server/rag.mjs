@@ -1,7 +1,7 @@
 import { extractPages } from "./pdf.mjs";
 import { chunkPages, expandQuery, tokenize, displayName, synonymsOf } from "./text.mjs";
 import { Bm25Index, vectorSearch, fuse } from "./search.mjs";
-import { embed, generate } from "./gemini.mjs";
+import { embed, generate } from "./ai.mjs";
 import { readFile } from "node:fs/promises";
 
 const SYSTEM = `Kamu adalah "Tanya BRI", asisten yang menjawab pertanyaan tentang ketentuan, kebijakan, dan prosedur BRI hanya berdasarkan kutipan dokumen yang diberikan.
@@ -179,8 +179,8 @@ export class Rag {
     };
   }
 
-  async ask(question, history = [], { docIds } = {}) {
-    const key = this.getKey();
+  async ask(question, history = [], { docIds, searchOnly } = {}) {
+    const key = searchOnly ? null : this.getKey();
     if (!this.#corpus().entries.length) {
       return {
         mode: "empty",

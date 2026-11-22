@@ -126,3 +126,18 @@ test("layoutLines keeps a table label next to its value", async () => {
   const text = layoutLines([item("Rp12.000", 200, 96, 40), item("Biaya Administrasi", 50, 100, 80), item("Setoran Awal", 50, 120, 60)]);
   assert.equal(text, "Setoran Awal\nBiaya Administrasi  ·  Rp12.000");
 });
+
+test("OpenAI-compatible provider maps Gemini-style turns to chat messages", async () => {
+  const { toMessages } = await import("./openai.mjs");
+  assert.deepEqual(
+    toMessages("sys", [
+      { role: "user", parts: [{ text: "a" }] },
+      { role: "model", parts: [{ text: "b" }, { text: "c" }] },
+    ]),
+    [
+      { role: "system", content: "sys" },
+      { role: "user", content: "a" },
+      { role: "assistant", content: "bc" },
+    ],
+  );
+});

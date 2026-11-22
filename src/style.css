@@ -606,7 +606,8 @@ a.doc-name:hover {
   font-weight: 600;
   font-size: 14px;
 }
-.key-form input {
+.key-form input,
+.login input {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 10px 12px;
@@ -763,4 +764,20 @@ mark {
 }
 .composer textarea:disabled {
   cursor: not-allowed;
+}
+
+.login {
+  background: var(--bg);
+}
+.login .dialog {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+}
+.login input {
+  width: 100%;
+}
+.login .button {
+  width: 100%;
+  justify-content: center;
 }

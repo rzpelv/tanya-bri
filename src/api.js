@@ -1,6 +1,7 @@
 async function request(path, options = {}) {
   const res = await fetch(path, options);
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && data.auth) window.dispatchEvent(new Event("tanya-bri:locked"));
   if (!res.ok) throw new Error(data.error || `Gagal (${res.status})`);
   return data;
 }
@@ -12,6 +13,8 @@ const json = (method, body) => ({
 });
 
 export const api = {
+  session: () => request("/api/session"),
+  login: (code) => request("/api/login", json("POST", { code })),
   status: () => request("/api/status"),
   documents: () => request("/api/documents").then((d) => d.documents),
   upload: (file, replace) =>
