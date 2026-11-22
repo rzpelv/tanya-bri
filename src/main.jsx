@@ -268,10 +268,12 @@ function SettingsDialog({ status, onClose, onChange }) {
         )}
         <p className="muted small">
           Tanpa API key, Tanya BRI tetap mencari dan menampilkan bagian PDF yang paling relevan. Dengan
-          Gemini API key, jawaban dirangkum oleh AI lengkap dengan sumbernya.
+          API key, jawaban dirangkum oleh AI lengkap dengan sumbernya.
         </p>
         {status?.keySource === "env" ? (
-          <p className="small">API key sudah diatur di server.</p>
+          <p className="small">
+            Memakai {status.provider}; API key sudah diatur di server.
+          </p>
         ) : (
           <form onSubmit={save} className="key-form">
             <label htmlFor="key">Gemini API key</label>
@@ -306,6 +308,68 @@ function SettingsDialog({ status, onClose, onChange }) {
       </div>
     </div>
   );
+}
+
+function Login({ onDone }) {
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const submit = async (event) => {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await api.login(code);
+      onDone();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="overlay login">
+      <form className="dialog" onSubmit={submit} aria-label="Masuk">
+        <img src="/icon.svg" alt="" width="48" height="48" />
+        <h2>Masuk ke Tanya BRI</h2>
+        <p className="muted small">Masukkan kode akses. Perangkat ini akan diingat selama setahun.</p>
+        <input
+          type="password"
+          autoFocus
+          autoComplete="current-password"
+          placeholder="Kode akses"
+          aria-label="Kode akses"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+        />
+        {error && <p className="error-text small">{error}</p>}
+        <button type="submit" className="button" disabled={busy || !code.trim()}>
+          {busy ? <Loader2 size={16} className="spin" /> : <KeyRound size={16} />} Masuk
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function Gate() {
+  const [state, setState] = useState("checking");
+  const check = useCallback(
+    () =>
+      api
+        .session()
+        .then((s) => setState(s.authed ? "in" : "locked"))
+        .catch(() => setState("in")),
+    [],
+  );
+  useEffect(() => {
+    check();
+    const lock = () => setState("locked");
+    window.addEventListener("tanya-bri:locked", lock);
+    return () => window.removeEventListener("tanya-bri:locked", lock);
+  }, [check]);
+  if (state === "checking") return null;
+  if (state === "locked") return <Login onDone={() => setState("in")} />;
+  return <App />;
 }
 
 function App() {
@@ -636,6 +700,6 @@ function App() {
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>
-    <App />
+    <Gate />
   </StrictMode>,
 );

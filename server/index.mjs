@@ -5,7 +5,8 @@ import { resolve, extname, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Store, sha256 } from "./store.mjs";
 import { Rag } from "./rag.mjs";
-import { embed, CHAT_MODEL } from "./gemini.mjs";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { embed, CHAT_MODEL, PROVIDER, ENV_KEY, CONFIG_KEY } from "./ai.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const staticRoot = resolve(process.env.STATIC_DIR || join(here, "..", "dist"));
@@ -13,8 +14,9 @@ const dataDir = resolve(process.env.DATA_DIR || join(here, "..", "data"));
 const MAX_UPLOAD = 50 * 1024 * 1024;
 
 const store = await new Store(dataDir).load();
-const envKey = process.env.GEMINI_API_KEY?.trim();
-const getKey = () => envKey || store.config.geminiKey || null;
+const envKey = ENV_KEY;
+const DAILY_AI_LIMIT = Number(process.env.AI_DAILY_LIMIT || 300);
+const getKey = () => envKey || store.config[CONFIG_KEY] || null;
 const rag = new Rag(store, { getKey });
 rag.embedMissing();
 
@@ -66,14 +68,82 @@ const publicDoc = ({ embedding, ...doc }) => ({ ...doc, embedding: Boolean(embed
 function status() {
   return {
     ai: Boolean(getKey()),
-    keySource: envKey ? "env" : store.config.geminiKey ? "app" : null,
+    keySource: envKey ? "env" : store.config[CONFIG_KEY] ? "app" : null,
     model: CHAT_MODEL,
+    provider: PROVIDER,
   };
+}
+
+// Access code gate: one shared code, remembered by the browser for a year.
+const accessCode = () => process.env.ACCESS_CODE?.trim() || store.config.accessCode || null;
+const sessionToken = (code) => createHmac("sha256", code).update("tanya-bri-session").digest("hex");
+const COOKIE = "tb_session";
+
+function cookies(req) {
+  return Object.fromEntries(
+    (req.headers.cookie || "").split(";").map((c) => c.trim().split("=")).filter(([k, v]) => k && v),
+  );
+}
+
+function authed(req) {
+  const code = accessCode();
+  if (!code) return true;
+  const given = Buffer.from(cookies(req)[COOKIE] || "");
+  const want = Buffer.from(sessionToken(code));
+  return given.length === want.length && timingSafeEqual(given, want);
+}
+
+// One shared bucket: forwarded IPs can be spoofed, and the app has a single shared code.
+const failures = new Map();
+
+async function login(req, res) {
+  const ip = "all";
+  const now = Date.now();
+  const entry = failures.get(ip);
+  if (entry && entry.until > now && entry.count >= 30)
+    return send(res, 429, { error: "Terlalu banyak percobaan. Coba lagi dalam 15 menit." });
+  const { code } = await readJson(req);
+  const expected = accessCode();
+  const given = Buffer.from(String(code || "").trim().toLowerCase());
+  const want = Buffer.from(String(expected || "").toLowerCase());
+  if (!expected || given.length !== want.length || !timingSafeEqual(given, want)) {
+    const next = entry && entry.until > now ? entry : { count: 0, until: now + 15 * 60_000 };
+    next.count += 1;
+    failures.set(ip, next);
+    return send(res, 401, { error: "Kode akses salah." });
+  }
+  failures.delete(ip);
+  const secure = req.headers["x-forwarded-proto"] === "https" ? "; Secure" : "";
+  res.setHeader(
+    "Set-Cookie",
+    `${COOKIE}=${sessionToken(expected)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000${secure}`,
+  );
+  return send(res, 200, { ok: true });
+}
+
+const usage = { day: "", count: 0 };
+function takeAiAnswer() {
+  const day = new Date().toISOString().slice(0, 10);
+  if (usage.day !== day) Object.assign(usage, { day, count: 0 });
+  if (usage.count >= DAILY_AI_LIMIT) return false;
+  usage.count += 1;
+  return true;
 }
 
 async function api(req, res, url) {
   const { pathname } = url;
   const method = req.method;
+
+  if (pathname === "/api/session" && method === "GET")
+    return send(res, 200, { required: Boolean(accessCode()), authed: authed(req) });
+  if (pathname === "/api/login" && method === "POST") return login(req, res);
+  if (!authed(req)) {
+    if (method === "GET" && /\/file$/.test(pathname)) {
+      res.writeHead(302, { Location: "/" });
+      return res.end();
+    }
+    return send(res, 401, { error: "Masukkan kode akses dulu.", auth: true });
+  }
 
   if (pathname === "/api/status" && method === "GET") return send(res, 200, status());
 
@@ -137,7 +207,11 @@ async function api(req, res, url) {
           .map((m) => ({ role: m.role === "user" ? "user" : "assistant", content: m.content }))
       : [];
     const scope = Array.isArray(docIds) ? docIds.filter((id) => typeof id === "string").slice(0, 50) : [];
-    return send(res, 200, await rag.ask(text, turns, { docIds: scope }));
+    const searchOnly = Boolean(getKey()) && !takeAiAnswer();
+    const result = await rag.ask(text, turns, { docIds: scope, searchOnly });
+    if (searchOnly)
+      result.notice = "Batas harian jawaban AI sudah tercapai, jadi sementara ditampilkan hasil pencarian.";
+    return send(res, 200, result);
   }
 
   if (pathname === "/api/settings/key" && method === "PUT") {
@@ -148,16 +222,16 @@ async function api(req, res, url) {
     try {
       await embed(value, ["tes"], "RETRIEVAL_QUERY");
     } catch (error) {
-      return send(res, 400, { error: `API key ditolak Gemini: ${error.message}` });
+      return send(res, 400, { error: `API key ditolak ${PROVIDER}: ${error.message}` });
     }
-    store.config.geminiKey = value;
+    store.config[CONFIG_KEY] = value;
     await store.saveConfig();
     rag.embedMissing();
     return send(res, 200, status());
   }
 
   if (pathname === "/api/settings/key" && method === "DELETE") {
-    delete store.config.geminiKey;
+    delete store.config[CONFIG_KEY];
     await store.saveConfig();
     return send(res, 200, status());
   }
