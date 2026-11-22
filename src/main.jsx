@@ -8,7 +8,6 @@ import {
   FileText,
   KeyRound,
   Loader2,
-  Menu,
   RefreshCw,
   MessageSquarePlus,
   Search,
@@ -223,7 +222,7 @@ function AssistantMessage({ message, known }) {
   );
 }
 
-function SettingsDialog({ status, onClose, onChange }) {
+function SettingsDialog({ status, onClose, onChange, children }) {
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -250,13 +249,15 @@ function SettingsDialog({ status, onClose, onChange }) {
   };
   return (
     <div className="overlay" onClick={onClose}>
-      <div className="dialog" role="dialog" aria-modal="true" aria-label="Pengaturan" onClick={(e) => e.stopPropagation()}>
+      <div className="dialog settings" role="dialog" aria-modal="true" aria-label="Pengaturan" onClick={(e) => e.stopPropagation()}>
         <div className="dialog-head">
-          <h2>Pengaturan AI</h2>
+          <h2>Pengaturan</h2>
           <button type="button" className="icon-button subtle" onClick={onClose} aria-label="Tutup">
             <X size={18} />
           </button>
         </div>
+        {children}
+        <div className="section-label">AI</div>
         {status?.ai ? (
           <p className="pill ok">
             <Check size={14} /> AI aktif · {status.model}
@@ -305,6 +306,9 @@ function SettingsDialog({ status, onClose, onChange }) {
             </div>
           </form>
         )}
+        <a className="link-button" href="https://app.devin.ai/sessions/64879c29be2b40558e9c7dba1b49ef56" target="_blank" rel="noreferrer">
+          Minta perubahan
+        </a>
       </div>
     </div>
   );
@@ -380,7 +384,6 @@ function App() {
   const [asking, setAsking] = useState(false);
   const [uploading, setUploading] = useState(0);
   const [uploadError, setUploadError] = useState("");
-  const [drawer, setDrawer] = useState(false);
   const [settings, setSettings] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [filter, setFilter] = useState("");
@@ -490,34 +493,8 @@ function App() {
     ? documents.filter((d) => d.name.toLowerCase().replace(/_/g, " ").includes(query))
     : documents;
 
-  const sidebar = (
-    <aside
-      className={`sidebar ${drawer ? "open" : ""} ${dragging ? "dragging" : ""}`}
-      onDragOver={(e) => {
-        e.preventDefault();
-        setDragging(true);
-      }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={(e) => {
-        e.preventDefault();
-        setDragging(false);
-        upload(e.dataTransfer.files);
-      }}
-    >
-      <div className="brand">
-        <img src="/icon.svg" alt="" width="36" height="36" />
-        <div>
-          <strong>Tanya BRI</strong>
-          <span>Asisten ketentuan dari PDF</span>
-        </div>
-        <button type="button" className="icon-button subtle only-mobile" onClick={() => setDrawer(false)} aria-label="Tutup">
-          <X size={18} />
-        </button>
-      </div>
-      <button type="button" className="button wide" onClick={() => fileInput.current?.click()}>
-        {uploading ? <Loader2 size={16} className="spin" /> : <Upload size={16} />}
-        {uploading ? "Mengunggah…" : "Unggah PDF"}
-      </button>
+  const fileInputs = (
+    <>
       <input
         ref={fileInput}
         type="file"
@@ -540,6 +517,23 @@ function App() {
           e.target.value = "";
         }}
       />
+    </>
+  );
+
+  const library = (
+    <div
+      className={`library ${dragging ? "dragging" : ""}`}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragging(false);
+        upload(e.dataTransfer.files);
+      }}
+    >
       <div className="section-label">
         Pustaka dokumen{" "}
         <span>{ready.length === documents.length ? ready.length : `${ready.length} siap / ${documents.length}`}</span>
@@ -565,26 +559,20 @@ function App() {
           Belum ada dokumen. Unggah PDF ketentuan, SOP, atau surat edaran BRI. Bisa juga seret file ke sini.
         </p>
       )}
-      <div className="sidebar-foot">
-        <button type="button" className="link-button" onClick={() => setSettings(true)}>
-          <Settings size={15} /> Pengaturan AI
-        </button>
-        <a className="link-button" href="https://app.devin.ai/sessions/64879c29be2b40558e9c7dba1b49ef56" target="_blank" rel="noreferrer">
-          Minta perubahan
-        </a>
-      </div>
-    </aside>
+      <button type="button" className="button wide" onClick={() => fileInput.current?.click()}>
+        {uploading ? <Loader2 size={16} className="spin" /> : <Upload size={16} />}
+        {uploading ? "Mengunggah…" : "Unggah PDF"}
+      </button>
+      {uploadError && <p className="error-text small">{uploadError}</p>}
+    </div>
   );
 
   return (
     <div className="app">
-      {sidebar}
-      {drawer && <div className="scrim only-mobile" onClick={() => setDrawer(false)} />}
+      {fileInputs}
       <main className="chat">
         <header className="topbar">
-          <button type="button" className="icon-button only-mobile" onClick={() => setDrawer(true)} aria-label="Dokumen">
-            <Menu size={20} />
-          </button>
+          <img src="/icon.svg" alt="" width="30" height="30" />
           <h1>Tanya BRI</h1>
           <button type="button" className={`mode ${status?.ai ? "on" : ""}`} onClick={() => setSettings(true)}>
             {status?.ai ? <Sparkles size={14} /> : <Search size={14} />}
@@ -595,6 +583,9 @@ function App() {
               <MessageSquarePlus size={19} />
             </button>
           )}
+          <button type="button" className="icon-button subtle" onClick={() => setSettings(true)} aria-label="Pengaturan" title="Pengaturan">
+            <Settings size={19} />
+          </button>
         </header>
         {uploadError && (
           <div className="toast" role="alert">
@@ -622,8 +613,8 @@ function App() {
                   ))}
                 </div>
               ) : (
-                <button type="button" className="button" onClick={() => fileInput.current?.click()}>
-                  <Upload size={16} /> Unggah PDF pertama
+                <button type="button" className="button" onClick={() => setSettings(true)}>
+                  <Upload size={16} /> Unggah PDF di Pengaturan
                 </button>
               )}
               {status && !status.ai && (
@@ -678,7 +669,7 @@ function App() {
             rows={1}
             value={input}
             disabled={!ready.length}
-            placeholder={ready.length ? "Tulis pertanyaan…" : "Unggah PDF dulu untuk mulai bertanya"}
+            placeholder={ready.length ? "Tulis pertanyaan…" : "Unggah PDF di Pengaturan untuk mulai bertanya"}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -693,7 +684,11 @@ function App() {
         </form>
         <p className="disclaimer">Periksa kembali jawaban dengan dokumen sumber sebelum digunakan.</p>
       </main>
-      {settings && <SettingsDialog status={status} onClose={() => setSettings(false)} onChange={setStatus} />}
+      {settings && (
+        <SettingsDialog status={status} onClose={() => setSettings(false)} onChange={setStatus}>
+          {library}
+        </SettingsDialog>
+      )}
     </div>
   );
 }
