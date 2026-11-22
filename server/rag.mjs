@@ -1,7 +1,7 @@
 import { extractPages } from "./pdf.mjs";
 import { chunkPages, expandQuery, tokenize, displayName, synonymsOf } from "./text.mjs";
 import { Bm25Index, vectorSearch, fuse } from "./search.mjs";
-import { embed, generate } from "./ai.mjs";
+import { embed, generate, EMBED_MODEL } from "./ai.mjs";
 import { readFile } from "node:fs/promises";
 
 const SYSTEM = `Kamu adalah "Tanya BRI", asisten yang menjawab pertanyaan tentang ketentuan, kebijakan, dan prosedur BRI hanya berdasarkan kutipan dokumen yang diberikan.
@@ -77,7 +77,7 @@ export class Rag {
 
   async #embedDoc(doc) {
     const key = this.getKey();
-    if (!key || doc.embedded || doc.status !== "ready" || !this.store.get(doc.id)) return;
+    if (!key || (doc.embedded && doc.embedModel === EMBED_MODEL) || doc.status !== "ready" || !this.store.get(doc.id)) return;
     const chunks = this.store.chunks.get(doc.id) || [];
     try {
       doc.embedding = true;
@@ -89,6 +89,7 @@ export class Rag {
       chunks.forEach((c, i) => (c.vector = vectors[i]));
       await this.store.saveChunks(doc.id, chunks);
       doc.embedded = true;
+      doc.embedModel = EMBED_MODEL;
       doc.embedError = undefined;
     } catch (error) {
       doc.embedError = "Indeks AI gagal dibuat; pencarian kata kunci tetap berjalan.";
@@ -102,7 +103,7 @@ export class Rag {
 
   embedMissing() {
     for (const doc of this.store.documents)
-      if (doc.status === "ready" && !doc.embedded) this.enqueue(() => this.#embedDoc(doc));
+      if (doc.status === "ready" && !(doc.embedded && doc.embedModel === EMBED_MODEL)) this.enqueue(() => this.#embedDoc(doc));
   }
 
   async #standalone(key, question, history) {
@@ -146,10 +147,11 @@ export class Rag {
     const lexical = bm25.search(query, 30, filter);
     const rankings = [lexical];
     let aiError;
-    if (key && entries.some((e) => e.vector)) {
+    const embedded = entries.filter((e) => e.vector && e.doc.embedModel === EMBED_MODEL);
+    if (key && embedded.length) {
       try {
         const [vector] = await embed(key, [question], "RETRIEVAL_QUERY");
-        rankings.push(vectorSearch(entries, vector, 30, filter));
+        rankings.push(vectorSearch(embedded, vector, 30, filter));
       } catch (error) {
         aiError = error;
       }
