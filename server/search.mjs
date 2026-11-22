@@ -65,6 +65,10 @@ export class Bm25Index {
     return this.names.get(entry)?.has(term) ?? false;
   }
 
+  isName(term) {
+    return this.docs.some((d) => d.name.has(term));
+  }
+
   missing(original) {
     return original.filter((t) => !synonymsOf(t).some((s) => this.df.get(s)));
   }

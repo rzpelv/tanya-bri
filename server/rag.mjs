@@ -136,7 +136,11 @@ export class Rag {
     let followUp = false;
     if (previous && isFollowUp(question, query)) {
       const prev = expandQuery(previous);
-      for (const [t, w] of prev.terms) if (!query.terms.has(t)) query.terms.set(t, w * 0.5);
+      const ownProduct = query.original.some((t) => bm25.isName(t));
+      for (const [t, w] of prev.terms) {
+        if (query.terms.has(t) || (ownProduct && bm25.isName(t))) continue;
+        query.terms.set(t, w * 0.5);
+      }
       followUp = true;
     }
     const lexical = bm25.search(query, 30, filter);
