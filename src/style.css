@@ -781,3 +781,30 @@ mark {
   width: 100%;
   justify-content: center;
 }
+
+.settings {
+  width: min(520px, 100%);
+  max-height: min(88dvh, 760px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.library {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-radius: 12px;
+}
+
+.library.dragging {
+  background: var(--accent-soft);
+  outline: 2px dashed var(--accent);
+  outline-offset: 4px;
+}
+
+.library .docs {
+  max-height: 42dvh;
+  overflow-y: auto;
+}
