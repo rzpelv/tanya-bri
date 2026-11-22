@@ -41,7 +41,7 @@ export class Store {
   }
 
   #write(name, value, mode) {
-    this.queue = this.queue.then(async () => {
+    this.queue = this.queue.catch(() => {}).then(async () => {
       const file = join(this.dir, name);
       const tmp = `${file}.${randomUUID()}.tmp`;
       await writeFile(tmp, JSON.stringify(value), mode ? { mode } : undefined);
