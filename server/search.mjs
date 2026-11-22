@@ -90,7 +90,7 @@ export function vectorSearch(entries, queryVector, limit = 20, filter) {
     .slice(0, limit);
 }
 
-const fingerprint = (text) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "").slice(0, 400);
+const fingerprint = (text) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 
 // Reciprocal rank fusion, keeping at most `perDoc` passages per document and
 // dropping passages whose text duplicates one already chosen (e.g. the same PDF uploaded twice).
