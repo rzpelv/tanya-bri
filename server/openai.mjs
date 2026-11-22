@@ -1,6 +1,6 @@
 // OpenAI-compatible provider (e.g. ClassAI router), same interface as gemini.mjs.
 const BASE = (process.env.AI_BASE_URL || "").replace(/\/+$/, "");
-export const CHAT_MODEL = process.env.AI_MODEL || "claude-haiku-4.5";
+export const CHAT_MODEL = process.env.AI_MODEL || "qwen3.7-plus";
 export const EMBED_MODEL = process.env.AI_EMBED_MODEL || "text-embedding-3-small";
 export const PROVIDER =
   process.env.AI_PROVIDER_NAME || (/classai/i.test(BASE) ? "ClassAI" : "OpenAI-compatible");
