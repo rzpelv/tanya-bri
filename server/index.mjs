@@ -224,7 +224,7 @@ async function api(req, res, url) {
   if (pathname === "/api/settings/key" && method === "PUT") {
     const body = await readJson(req);
     const base = body.baseUrl === undefined ? baseUrl() : normalizeBaseUrl(body.baseUrl) || ENV_BASE_URL;
-    if (base) {
+    if (base && base !== ENV_BASE_URL) {
       let url;
       try {
         url = new URL(base);
