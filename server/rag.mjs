@@ -1,7 +1,7 @@
 import { extractPages } from "./pdf.mjs";
 import { chunkPages, expandQuery, tokenize, displayName, synonymsOf } from "./text.mjs";
 import { Bm25Index, vectorSearch, fuse } from "./search.mjs";
-import { embed, generate, EMBED_MODEL } from "./ai.mjs";
+import { embed, generate, embedModel, baseUrl } from "./ai.mjs";
 import { readFile } from "node:fs/promises";
 
 const SYSTEM = `Kamu adalah "Tanya BRI", asisten yang menjawab pertanyaan tentang ketentuan, kebijakan, dan prosedur BRI hanya berdasarkan kutipan dokumen yang diberikan.
@@ -77,19 +77,23 @@ export class Rag {
 
   async #embedDoc(doc) {
     const key = this.getKey();
-    if (!key || (doc.embedded && doc.embedModel === EMBED_MODEL) || doc.status !== "ready" || !this.store.get(doc.id)) return;
+    const base = baseUrl();
+    const model = embedModel(base);
+    if (!key || (doc.embedded && doc.embedModel === model) || doc.status !== "ready" || !this.store.get(doc.id)) return;
     const chunks = this.store.chunks.get(doc.id) || [];
     try {
       doc.embedding = true;
       const vectors = await embed(
         key,
         chunks.map((c) => `${doc.name}\n${c.text}`),
+        undefined,
+        base,
       );
       if (!this.store.get(doc.id)) return;
       chunks.forEach((c, i) => (c.vector = vectors[i]));
       await this.store.saveChunks(doc.id, chunks);
       doc.embedded = true;
-      doc.embedModel = EMBED_MODEL;
+      doc.embedModel = model;
       doc.embedError = undefined;
     } catch (error) {
       doc.embedError = "Indeks AI gagal dibuat; pencarian kata kunci tetap berjalan.";
@@ -103,10 +107,10 @@ export class Rag {
 
   embedMissing() {
     for (const doc of this.store.documents)
-      if (doc.status === "ready" && !(doc.embedded && doc.embedModel === EMBED_MODEL)) this.enqueue(() => this.#embedDoc(doc));
+      if (doc.status === "ready" && !(doc.embedded && doc.embedModel === embedModel())) this.enqueue(() => this.#embedDoc(doc));
   }
 
-  async #standalone(key, question, history) {
+  async #standalone(key, base, question, history) {
     if (!history.length) return question;
     const transcript = history
       .slice(-4)
@@ -123,14 +127,14 @@ export class Rag {
           },
         ],
         temperature: 0,
-      });
+      }, base);
       return rewritten || question;
     } catch {
       return question;
     }
   }
 
-  async retrieve(question, key, { docIds, previous } = {}) {
+  async retrieve(question, key, { docIds, previous, base = baseUrl() } = {}) {
     const { entries, bm25 } = this.#corpus();
     const filter = docIds?.length ? (e) => docIds.includes(e.doc.id) : undefined;
     const query = expandQuery(question);
@@ -147,10 +151,10 @@ export class Rag {
     const lexical = bm25.search(query, 30, filter);
     const rankings = [lexical];
     let aiError;
-    const embedded = entries.filter((e) => e.vector && e.doc.embedModel === EMBED_MODEL);
+    const embedded = entries.filter((e) => e.vector && e.doc.embedModel === embedModel(base));
     if (key && embedded.length) {
       try {
-        const [vector] = await embed(key, [question], "RETRIEVAL_QUERY");
+        const [vector] = await embed(key, [question], "RETRIEVAL_QUERY", base);
         rankings.push(vectorSearch(embedded, vector, 30, filter));
       } catch (error) {
         aiError = error;
@@ -183,6 +187,7 @@ export class Rag {
 
   async ask(question, history = [], { docIds, searchOnly } = {}) {
     const key = searchOnly ? null : this.getKey();
+    const base = baseUrl();
     if (!this.#corpus().entries.length) {
       return {
         mode: "empty",
@@ -191,9 +196,10 @@ export class Rag {
       };
     }
     const previous = [...history].reverse().find((m) => m.role === "user")?.content;
-    const standalone = key && history.length ? await this.#standalone(key, question, history) : null;
+    const standalone = key && history.length ? await this.#standalone(key, base, question, history) : null;
     const { hits, aiError, query, followUp, missing, best, named } = await this.retrieve(standalone || question, key, {
       docIds,
+      base,
       previous: standalone ? null : previous,
     });
     const sources = hits.map(({ entry }, i) => ({
@@ -243,7 +249,7 @@ export class Rag {
         role: "user",
         parts: [{ text: `Kutipan dokumen:\n\n${context}\n\nPertanyaan: ${question}` }],
       });
-      const answer = await generate(key, { system: SYSTEM, contents });
+      const answer = await generate(key, { system: SYSTEM, contents }, base);
       return { mode: "ai", answer: answer || "Maaf, AI tidak memberikan jawaban.", terms, sources };
     } catch (error) {
       console.error("generate:", error.message);

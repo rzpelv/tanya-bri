@@ -22,7 +22,7 @@ Environment variables:
 | `PORT` | `3000` | HTTP port |
 | `DATA_DIR` | `./data` | Uploaded PDFs, extracted chunks, embeddings and settings. Keep it outside the build directory. |
 | `GEMINI_API_KEY` | none | Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey). Can also be entered in the app under **Pengaturan AI**. |
-| `AI_BASE_URL` | none | OpenAI-compatible API (e.g. `https://router.classai.id/v1`). When set, it is used instead of Gemini. |
+| `AI_BASE_URL` | none | OpenAI-compatible API (e.g. `https://router.classai.id/v1`). When set, it is used instead of Gemini. The address and key can also be changed in the app under **Pengaturan → AI**; the server key is only ever sent to this address. |
 | `AI_API_KEY` | none | Key for `AI_BASE_URL` |
 | `AI_MODEL` / `AI_EMBED_MODEL` | `qwen3.7-plus` / `text-embedding-3-small` | Answer and embedding models for `AI_BASE_URL` |
 | `AI_DAILY_LIMIT` | unlimited | Optional cap on AI answers per day; after that the app falls back to search-only until midnight UTC |

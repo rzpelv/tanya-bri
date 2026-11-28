@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { Store, sha256 } from "./store.mjs";
 import { Rag } from "./rag.mjs";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { embed, generate, CHAT_MODEL, PROVIDER, ENV_KEY, CONFIG_KEY } from "./ai.mjs";
+import { embed, generate, chatModel, provider, configKey, baseUrl, setBaseUrl, normalizeBaseUrl, ENV_BASE_URL, ENV_KEY } from "./ai.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const staticRoot = resolve(process.env.STATIC_DIR || join(here, "..", "dist"));
@@ -16,7 +16,9 @@ const MAX_UPLOAD = 50 * 1024 * 1024;
 const store = await new Store(dataDir).load();
 const envKey = ENV_KEY;
 const DAILY_AI_LIMIT = process.env.AI_DAILY_LIMIT ? Number(process.env.AI_DAILY_LIMIT) : Infinity;
-const getKey = () => store.config[CONFIG_KEY] || envKey || null;
+setBaseUrl(store.config.aiBaseUrl);
+// The server key only ever goes to the server's own address.
+const getKey = () => store.config[configKey()] || (baseUrl() === ENV_BASE_URL ? envKey : null) || null;
 const rag = new Rag(store, { getKey });
 rag.embedMissing();
 
@@ -68,11 +70,14 @@ const publicDoc = ({ embedding, ...doc }) => ({ ...doc, embedding: Boolean(embed
 function status() {
   return {
     ai: Boolean(getKey()),
-    keySource: store.config[CONFIG_KEY] ? "app" : envKey ? "env" : null,
+    keySource: store.config[configKey()] ? "app" : getKey() ? "env" : null,
     keyHint: getKey() ? `…${getKey().slice(-4)}` : null,
     hasEnvKey: Boolean(envKey),
-    model: CHAT_MODEL,
-    provider: PROVIDER,
+    baseUrl: baseUrl() || null,
+    baseSource: store.config.aiBaseUrl ? "app" : baseUrl() ? "env" : null,
+    custom: Boolean(store.config.aiBaseUrl || store.config[configKey()]),
+    model: chatModel(),
+    provider: provider(),
   };
 }
 
@@ -217,24 +222,43 @@ async function api(req, res, url) {
   }
 
   if (pathname === "/api/settings/key" && method === "PUT") {
-    const { key } = await readJson(req);
-    const value = String(key || "").trim();
-    if (!/^\S{20,300}$/.test(value))
-      return send(res, 400, { error: "Format API key tidak valid." });
-    try {
-      await embed(value, ["tes"], "RETRIEVAL_QUERY");
-      await generate(value, { system: "Balas singkat.", contents: [{ role: "user", parts: [{ text: "tes" }] }] });
-    } catch (error) {
-      return send(res, 400, { error: `API key ditolak ${PROVIDER}: ${error.message}` });
+    const body = await readJson(req);
+    const base = body.baseUrl === undefined ? baseUrl() : normalizeBaseUrl(body.baseUrl) || ENV_BASE_URL;
+    if (base && base !== ENV_BASE_URL) {
+      let url;
+      try {
+        url = new URL(base);
+      } catch {}
+      const local = url && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+      if (!url || url.search || url.hash || !(url.protocol === "https:" || (local && url.protocol === "http:")))
+        return send(res, 400, { error: "Alamat API harus diawali https:// (contoh: https://router.classai.id/v1)." });
     }
-    store.config[CONFIG_KEY] = value;
+    const typed = String(body.key || "").trim();
+    if (typed && !/^\S{20,300}$/.test(typed)) return send(res, 400, { error: "Format API key tidak valid." });
+    // A saved key stays with its address; another address needs its own key (or the server's, for the server's address).
+    const value = typed || (base === baseUrl() ? getKey() : base === ENV_BASE_URL ? envKey : null);
+    if (!value) return send(res, 400, { error: "Isi API key untuk alamat ini." });
+    try {
+      await embed(value, ["tes"], "RETRIEVAL_QUERY", base);
+      await generate(value, { system: "Balas singkat.", contents: [{ role: "user", parts: [{ text: "tes" }] }] }, base);
+    } catch (error) {
+      return send(res, 400, { error: `Gagal terhubung ke ${provider(base)}: ${error.message}` });
+    }
+    if (base && base !== ENV_BASE_URL) store.config.aiBaseUrl = base;
+    else delete store.config.aiBaseUrl;
+    if (value !== envKey || base !== ENV_BASE_URL) store.config[configKey(base)] = value;
+    else delete store.config[configKey(base)];
+    setBaseUrl(store.config.aiBaseUrl);
     await store.saveConfig();
     rag.embedMissing();
     return send(res, 200, status());
   }
 
   if (pathname === "/api/settings/key" && method === "DELETE") {
-    delete store.config[CONFIG_KEY];
+    delete store.config.aiBaseUrl;
+    delete store.config.aiKey;
+    delete store.config.geminiKey;
+    setBaseUrl(null);
     await store.saveConfig();
     rag.embedMissing();
     return send(res, 200, status());
