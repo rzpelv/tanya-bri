@@ -11,9 +11,9 @@ export const baseUrl = () => base;
 
 export const provider = (b = base) => (b ? openai.providerName(b) : "Gemini");
 export const chatModel = (b = base) => (b ? openai.CHAT_MODEL : gemini.CHAT_MODEL);
-// Vectors from a different endpoint may not be comparable, so its model id is tagged with the host.
+// Vectors from a different endpoint may not be comparable, so its model id is tagged with the endpoint.
 export const embedModel = (b = base) =>
-  !b ? gemini.EMBED_MODEL : b === ENV_BASE_URL ? openai.EMBED_MODEL : `${new URL(b).host}/${openai.EMBED_MODEL}`;
+  !b ? gemini.EMBED_MODEL : b === ENV_BASE_URL ? openai.EMBED_MODEL : `${b.replace(/^https?:\/\//, "")}/${openai.EMBED_MODEL}`;
 // Keys saved in the app are kept per provider so one provider's key is never sent to another.
 export const configKey = (b = base) => (b ? "aiKey" : "geminiKey");
 
