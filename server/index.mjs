@@ -16,7 +16,7 @@ const MAX_UPLOAD = 50 * 1024 * 1024;
 const store = await new Store(dataDir).load();
 const envKey = ENV_KEY;
 const DAILY_AI_LIMIT = process.env.AI_DAILY_LIMIT ? Number(process.env.AI_DAILY_LIMIT) : Infinity;
-const getKey = () => envKey || store.config[CONFIG_KEY] || null;
+const getKey = () => store.config[CONFIG_KEY] || envKey || null;
 const rag = new Rag(store, { getKey });
 rag.embedMissing();
 
@@ -68,7 +68,9 @@ const publicDoc = ({ embedding, ...doc }) => ({ ...doc, embedding: Boolean(embed
 function status() {
   return {
     ai: Boolean(getKey()),
-    keySource: envKey ? "env" : store.config[CONFIG_KEY] ? "app" : null,
+    keySource: store.config[CONFIG_KEY] ? "app" : envKey ? "env" : null,
+    keyHint: getKey() ? `…${getKey().slice(-4)}` : null,
+    hasEnvKey: Boolean(envKey),
     model: CHAT_MODEL,
     provider: PROVIDER,
   };
@@ -217,7 +219,7 @@ async function api(req, res, url) {
   if (pathname === "/api/settings/key" && method === "PUT") {
     const { key } = await readJson(req);
     const value = String(key || "").trim();
-    if (!/^[\w-]{20,200}$/.test(value))
+    if (!/^\S{20,300}$/.test(value))
       return send(res, 400, { error: "Format API key tidak valid." });
     try {
       await embed(value, ["tes"], "RETRIEVAL_QUERY");
@@ -233,6 +235,7 @@ async function api(req, res, url) {
   if (pathname === "/api/settings/key" && method === "DELETE") {
     delete store.config[CONFIG_KEY];
     await store.saveConfig();
+    rag.embedMissing();
     return send(res, 200, status());
   }
 

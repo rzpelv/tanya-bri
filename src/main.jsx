@@ -271,41 +271,45 @@ function SettingsDialog({ status, onClose, onChange, children }) {
           Tanpa API key, Tanya BRI tetap mencari dan menampilkan bagian PDF yang paling relevan. Dengan
           API key, jawaban dirangkum oleh AI lengkap dengan sumbernya.
         </p>
-        {status?.keySource === "env" ? (
-          <p className="small">
-            Memakai {status.provider}; API key sudah diatur di server.
-          </p>
-        ) : (
-          <form onSubmit={save} className="key-form">
-            <label htmlFor="key">Gemini API key</label>
-            <input
-              id="key"
-              type="password"
-              autoComplete="off"
-              placeholder={status?.keySource === "app" ? "Sudah tersimpan — isi untuk mengganti" : "AIza…"}
-              value={key}
-              onChange={(e) => setKey(e.target.value)}
-            />
-            <p className="muted small">
-              Buat gratis di{" "}
-              <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">
-                Google AI Studio
-              </a>
-              . Key disimpan di server aplikasi, tidak ditampilkan lagi.
+        <form onSubmit={save} className="key-form">
+          <label htmlFor="key">{status?.provider || "AI"} API key</label>
+          {status?.keySource && (
+            <p className="small">
+              {status.keySource === "app" ? "Key dari Pengaturan" : "Key bawaan server"} sedang dipakai ({status.keyHint}).
             </p>
-            {error && <p className="error-text small">{error}</p>}
-            <div className="row">
-              {status?.keySource === "app" && (
-                <button type="button" className="button ghost" onClick={remove} disabled={busy}>
-                  Hapus key
-                </button>
-              )}
-              <button type="submit" className="button" disabled={busy || !key.trim()}>
-                {busy ? <Loader2 size={16} className="spin" /> : <KeyRound size={16} />} Simpan & uji
+          )}
+          <input
+            id="key"
+            type="password"
+            autoComplete="off"
+            placeholder={status?.keySource ? "Isi untuk mengganti key" : "Tempel API key di sini"}
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+          />
+          <p className="muted small">
+            {status?.provider === "Gemini" ? (
+              <>
+                Buat gratis di{" "}
+                <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">
+                  Google AI Studio
+                </a>
+                .{" "}
+              </>
+            ) : null}
+            Key diuji dulu sebelum disimpan di server aplikasi, dan tidak ditampilkan lagi.
+          </p>
+          {error && <p className="error-text small">{error}</p>}
+          <div className="row">
+            {status?.keySource === "app" && (
+              <button type="button" className="button ghost" onClick={remove} disabled={busy}>
+                {status.hasEnvKey ? "Pakai key bawaan" : "Hapus key"}
               </button>
-            </div>
-          </form>
-        )}
+            )}
+            <button type="submit" className="button" disabled={busy || !key.trim()}>
+              {busy ? <Loader2 size={16} className="spin" /> : <KeyRound size={16} />} Simpan & uji
+            </button>
+          </div>
+        </form>
         <a className="link-button" href="https://app.devin.ai/sessions/64879c29be2b40558e9c7dba1b49ef56" target="_blank" rel="noreferrer">
           Minta perubahan
         </a>
