@@ -229,7 +229,8 @@ async function api(req, res, url) {
       try {
         url = new URL(base);
       } catch {}
-      if (!url || !/^https?:$/.test(url.protocol))
+      const local = url && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+      if (!url || url.search || url.hash || !(url.protocol === "https:" || (local && url.protocol === "http:")))
         return send(res, 400, { error: "Alamat API harus diawali https:// (contoh: https://router.classai.id/v1)." });
     }
     const typed = String(body.key || "").trim();
