@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { Store, sha256 } from "./store.mjs";
 import { Rag } from "./rag.mjs";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { embed, CHAT_MODEL, PROVIDER, ENV_KEY, CONFIG_KEY } from "./ai.mjs";
+import { embed, generate, CHAT_MODEL, PROVIDER, ENV_KEY, CONFIG_KEY } from "./ai.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const staticRoot = resolve(process.env.STATIC_DIR || join(here, "..", "dist"));
@@ -223,6 +223,7 @@ async function api(req, res, url) {
       return send(res, 400, { error: "Format API key tidak valid." });
     try {
       await embed(value, ["tes"], "RETRIEVAL_QUERY");
+      await generate(value, { system: "Balas singkat.", contents: [{ role: "user", parts: [{ text: "tes" }] }] });
     } catch (error) {
       return send(res, 400, { error: `API key ditolak ${PROVIDER}: ${error.message}` });
     }
