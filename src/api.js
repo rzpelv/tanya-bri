@@ -25,7 +25,7 @@ export const api = {
     }),
   remove: (id) => request(`/api/documents/${id}`, { method: "DELETE" }),
   ask: (question, history) => request("/api/chat", json("POST", { question, history })),
-  saveKey: (key) => request("/api/settings/key", json("PUT", { key })),
+  saveKey: (key, baseUrl) => request("/api/settings/key", json("PUT", { key, baseUrl })),
   removeKey: () => request("/api/settings/key", { method: "DELETE" }),
 };
 

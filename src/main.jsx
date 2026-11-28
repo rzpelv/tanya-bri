@@ -224,6 +224,7 @@ function AssistantMessage({ message, known }) {
 
 function SettingsDialog({ status, onClose, onChange, children }) {
   const [key, setKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState(status?.baseUrl || "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const save = async (event) => {
@@ -231,8 +232,10 @@ function SettingsDialog({ status, onClose, onChange, children }) {
     setBusy(true);
     setError("");
     try {
-      onChange(await api.saveKey(key));
+      const next = await api.saveKey(key, baseUrl);
+      onChange(next);
       setKey("");
+      setBaseUrl(next.baseUrl || "");
     } catch (e) {
       setError(e.message);
     } finally {
@@ -242,7 +245,9 @@ function SettingsDialog({ status, onClose, onChange, children }) {
   const remove = async () => {
     setBusy(true);
     try {
-      onChange(await api.removeKey());
+      const next = await api.removeKey();
+      onChange(next);
+      setBaseUrl(next.baseUrl || "");
     } finally {
       setBusy(false);
     }
@@ -272,10 +277,21 @@ function SettingsDialog({ status, onClose, onChange, children }) {
           API key, jawaban dirangkum oleh AI lengkap dengan sumbernya.
         </p>
         <form onSubmit={save} className="key-form">
+          <label htmlFor="base-url">Alamat API</label>
+          <input
+            id="base-url"
+            type="url"
+            inputMode="url"
+            autoComplete="off"
+            placeholder={status?.provider === "Gemini" ? "Kosongkan untuk Gemini" : "https://router.classai.id/v1"}
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+          />
           <label htmlFor="key">{status?.provider || "AI"} API key</label>
           {status?.keySource && (
             <p className="small">
               {status.keySource === "app" ? "Key dari Pengaturan" : "Key bawaan server"} sedang dipakai ({status.keyHint}).
+              Kosongkan kalau hanya mengganti alamat.
             </p>
           )}
           <input
@@ -296,16 +312,20 @@ function SettingsDialog({ status, onClose, onChange, children }) {
                 .{" "}
               </>
             ) : null}
-            Key diuji dulu sebelum disimpan di server aplikasi, dan tidak ditampilkan lagi.
+            Alamat dan key diuji dulu sebelum disimpan di server aplikasi. Key tidak ditampilkan lagi.
           </p>
           {error && <p className="error-text small">{error}</p>}
           <div className="row">
-            {status?.keySource === "app" && (
+            {status?.custom && (
               <button type="button" className="button ghost" onClick={remove} disabled={busy}>
-                {status.hasEnvKey ? "Pakai key bawaan" : "Hapus key"}
+                {status.hasEnvKey ? "Pakai bawaan" : "Hapus pengaturan"}
               </button>
             )}
-            <button type="submit" className="button" disabled={busy || !key.trim()}>
+            <button
+              type="submit"
+              className="button"
+              disabled={busy || (!key.trim() && baseUrl.trim().replace(/\/+$/, "") === (status?.baseUrl || ""))}
+            >
               {busy ? <Loader2 size={16} className="spin" /> : <KeyRound size={16} />} Simpan & uji
             </button>
           </div>
